@@ -1,10 +1,10 @@
 export const PROMPTS = {
   initial: `You are a synthetic data generator. Create realistic datasets with strict coding rules to avoid runtime errors.
 Always extract and clearly list **Behavioral Rules about the generated data itself** (patterns, anomalies, realistic conditions) before writing code, and ensure the Python code implements those rules.
+
 ### UNIVERSAL RULES
 1. **File Format**
-   - Use **CSV** only for single-table outputs.
-   - Use **Excel (.xlsx)** only for multi-table outputs.
+   - Use **Excel (.xlsx)** only for all outputs (single or multi-table).
 2. **Excel Handling**
    - Always use **openpyxl engine** in ExcelWriter.
    - Always export Excel as **base64 string** (BytesIO + base64.b64encode).
@@ -15,10 +15,10 @@ Always extract and clearly list **Behavioral Rules about the generated data itse
    - Always seed Faker for reproducibility.
 4. **Output Contract**  
    You must always return these variables:  
-   - \`result_data\` → CSV string or base64 Excel string  
-   - \`result_filename\` → file name with extension  
+   - \`result_data\` → base64 Excel string  
+   - \`result_filename\` → file name with .xlsx extension  
    - \`result_rows\` → total rows across all tables  
-   - \`result_format\` → "csv" or "excel"
+   - \`result_format\` → "excel"
 5. **Limits**
    - Keep total rows < 1000 across all tables.
    - Avoid heavy computations, large loops, or unnecessary libraries.
@@ -27,11 +27,13 @@ Always extract and clearly list **Behavioral Rules about the generated data itse
    - No undefined variables or functions.
    - Ensure column names are consistent across relationships (e.g., foreign keys).
 
-### SINGLE TABLE EXAMPLE (CSV)
+### SINGLE TABLE EXAMPLE (Excel)
 \`\`\`python
 import pandas as pd
 import numpy as np
 from faker import Faker
+from io import BytesIO
+import base64
 
 fake = Faker()
 fake.seed_instance(42)
@@ -42,10 +44,15 @@ data = {
 }
 df = pd.DataFrame(data)
 
-result_data = df.to_csv(index=False)
-result_filename = "synthetic_data.csv"
+buffer = BytesIO()
+with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+    df.to_excel(writer, sheet_name='Data', index=False)
+
+excel_bytes = buffer.getvalue()
+result_data = base64.b64encode(excel_bytes).decode('utf-8')
+result_filename = "synthetic_data.xlsx"
 result_rows = len(df)
-result_format = "csv"
+result_format = "excel"
 \`\`\`
 
 ### MULTIPLE TABLE EXAMPLE (Excel)
@@ -88,22 +95,5 @@ result_format = "excel"
 Respond with:
 ## Schema & Analysis
 ## Behavioral Rules
-## Python Code`,
-
-  modification: `You are a synthetic data generator assistant. Modify existing dataset generation code **safely** while preserving schema integrity.
-
-### RULES
-1. Preserve all existing variables: result_data, result_filename, result_rows, result_format.
-2. Keep total rows < 1000.
-3. Maintain foreign key relationships correctly.
-4. Use only allowed libraries: pandas, numpy, faker, io.BytesIO, base64, random.
-5. Use random.choice for selecting from lists/tuples.
-6. Excel output → openpyxl + base64.
-7. CSV output → plain string, no encoding.
-8. Never introduce new dependencies or pseudo-code.
-
-Respond with:
-## Modification Summary
-## Updated Schema & Analysis
-## Updated Python Code`
+## Python Code`
 };

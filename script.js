@@ -16,7 +16,6 @@ marked.use({
         },
     },
 });
-
 const S = {
     provider: null,
     models: [],
@@ -24,44 +23,25 @@ const S = {
     generatedCode: "",
     pyodide: null,
     dataResult: null,
-    pyodideLoaded: false,
-    originalScenario: "",
-    currentResponse: "",
-    generationCount: 1,
-    isModifying: false
+    pyodideLoaded: false
 };
 
 const UI = {
     showLoading: (show, text = 'Processing...', progress = 0) => {
         $('loading').classList.toggle('d-none', !show);
-        if (show) {  $('loading-text').textContent = text;  }
+        if (show) { $('loading-text').textContent = text; }
     },
     updateStatus: (status, type = 'secondary') => {
         const indicator = $('status-indicator');
         indicator.textContent = status;
         indicator.className = `badge bg-${type} ms-2`;
     },
-    updateModeUI: (isModifying) => {
-        S.isModifying = isModifying;
-        const btn = $('btn-generate'),
-              label = $('prompt-label'),
-              prompt = $('user-prompt');
-        Object.assign(btn, {
-            innerHTML: isModifying ? '🔄 Modify Dataset' : '📊 Generate Dataset',
-            className: isModifying ? 'btn btn-warning' : 'btn btn-primary'
-        });
-        label.textContent = isModifying ? 'Modify Your Dataset:' : 'Dataset Scenario:';
-        prompt.placeholder = isModifying
-            ? "Example: 'Add a products table' or 'Change customer count to 200'"
-            : "Example: 'E-commerce data with customers, products, orders in Excel'";
-    },
     alert: (type, message) => {
-          bootstrapAlert({
-              body: message, color: type,
-              position: 'top-0 end-0',
-              delay: type === 'success' ? 3000 : 5000
-          });
-
+        bootstrapAlert({
+            body: message, color: type,
+            position: 'top-0 end-0',
+            delay: type === 'success' ? 3000 : 5000
+        });
     },
     hideElements: (...ids) => ids.forEach(id => $(id).classList.add('d-none')),
     showElements: (...ids) => ids.forEach(id => $(id).classList.remove('d-none')),
@@ -76,8 +56,14 @@ const LLM = {
                 show
             });
             S.provider = { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
-            S.models = cfg.models.map(m => ({ id: m, name: m }));
-            S.currentModel = S.models[0]?.id;
+            const filteredModels = cfg.models.filter(model => {
+            const modelName = model.toLowerCase();
+            return modelName.includes('gpt-4.1') || modelName.includes('gpt-5');
+            });
+            S.models = filteredModels.map(model => ({ id: model, name: model }));
+            S.currentModel = S.models.find(m => m.id.toLowerCase().includes('gpt-4.1'))?.id || 
+                            S.models.find(m => m.id.toLowerCase().includes('gpt-5'))?.id ||
+                            S.models[0]?.id;
             this.fillModelDropdown();
             UI.updateStatus('Configured', 'success');
             $('btn-generate').disabled = false;
@@ -94,28 +80,21 @@ const LLM = {
             value: m.id, textContent: m.name, selected: m.id === S.currentModel
         })));
     },
-    async generate(promptText, isMod = false) {
+    async generate(promptText) {
         if (!S.provider) throw new Error('LLM not configured');
-
-        const sysPrompt = isMod ? PROMPTS.modification : PROMPTS.initial;
-        const usrPrompt = isMod
-            ? `ORIGINAL SCENARIO: ${S.originalScenario}
-               ORIGINAL RESPONSE: ${S.currentResponse}
-               REQUESTED MODIFICATION: ${promptText}`
-            : promptText;
         const req = {
             method: "POST",
-            headers: {"Content-Type":"application/json","Authorization": `Bearer ${S.provider.apiKey}` },
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${S.provider.apiKey}` },
             body: JSON.stringify({
                 model: S.currentModel,
-                messages: [{role: "system", content: sysPrompt }, {role:"user", content: usrPrompt}],
+                messages:[{role:"system",content:PROMPTS.initial},{role:"user",content:promptText}],
                 stream: true
             })
         };
         let content = "";
         const respDiv = $('response-content');
         UI.showElements('response-container');
-        respDiv.innerHTML = `<div class="text-muted">${isMod ? 'Modifying' : 'Generating'} dataset...</div>`;
+        respDiv.innerHTML = `<div class="text-muted">Generating dataset...</div>`;
         try {
             for await (const data of asyncLLM(`${S.provider.baseUrl}/chat/completions`, req)) {
                 if (data.content) {
@@ -128,7 +107,6 @@ const LLM = {
                     }
                 }
             }
-            S.currentResponse = content;
         } catch (e) {
             throw e;
         }
@@ -148,12 +126,10 @@ const Python = {
                 ['pandas', 65], ['numpy', 70], ['faker', 75], ['openpyxl', 85]
             ]) {
                 UI.showLoading(true, `Installing ${name}...`, progress);
-                await micropip.install(name);
+                try { await micropip.install(name); } catch(e) { await S.pyodide.loadPackage(name); }
             }
             return S.pyodideLoaded = true, S.pyodide;
-        } finally {
-            UI.showLoading(false);
-        }
+        } finally {  UI.showLoading(false); }
     },
     async execute() {
         if (!S.generatedCode) return UI.alert('warning', 'No Python code to execute');
@@ -168,27 +144,18 @@ const Python = {
             const hasData = vars('result_data');
             if (!hasData) throw new Error('No result_data variable found');
             const rawData = pyodide.runPython("result_data"),
-                  filename = vars('result_filename') ? pyodide.runPython("result_filename") : "synthetic_data.csv",
-                  format   = vars('result_format') ? pyodide.runPython("result_format") : "csv",
-                  rows     = vars('result_rows') ? pyodide.runPython("result_rows") : 0;
-            let processedData = rawData, dataSize;
-            if (format === 'excel') {
-                const bytes = Uint8Array.from(atob(rawData), c => c.charCodeAt(0));
-                processedData = bytes;
-                dataSize = bytes.length;
-            } else {
-                dataSize = rawData.length;
-            }
-            if (!processedData || (processedData.length === 0))
+                filename = vars('result_filename') ? pyodide.runPython("result_filename") : "synthetic_data.xlsx",
+                rows = vars('result_rows') ? pyodide.runPython("result_rows") : 0;
+            const bytes = Uint8Array.from(atob(rawData), c => c.charCodeAt(0));
+            const dataSize = bytes.length;
+            if (!bytes || (bytes.length === 0))
                 throw new Error('Processed data is empty');
-            S.dataResult = { filename, data: processedData, rows, format, size: dataSize };
+            S.dataResult = { filename, data: bytes, rows, size: dataSize };
             UI.showElements('download-buttons');
             $('user-prompt').value = "";
-            if (!S.isModifying) UI.updateModeUI(true);
-            const unit = format === 'csv' ? 'characters' : 'bytes';
-            UI.alert('success', `${format.toUpperCase()} dataset ready: ${rows} rows, ${dataSize} ${unit}`);
+            UI.alert('success', `Excel dataset ready: ${rows} rows, ${dataSize} bytes`);
         } catch (err) {
-             UI.alert('danger', `Execution error: ${err.message}`);
+            UI.alert('danger', `Execution error: ${err.message}`);
         } finally {
             UI.showLoading(false);
             $('btn-run-code').disabled = false;
@@ -201,11 +168,9 @@ const Data = {
         const res = S.dataResult;
         if (!res?.data) return UI.alert('warning', 'No data available for download');
         try {
-            const { filename = 'synthetic_data.csv', data, format = 'csv' } = res;
+            const { filename = 'synthetic_data.xlsx', data } = res;
             if (!data?.length) throw new Error('Data is empty');
-            const mime = format === 'excel'
-                ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                : 'text/csv;charset=utf-8';
+            const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
             const blob = new Blob([data], { type: mime });
             if (!blob.size) throw new Error('Generated blob is empty');
             const url = URL.createObjectURL(blob);
@@ -222,24 +187,15 @@ const Data = {
 
 async function submit() {
     const promptText = $('user-prompt').value.trim();
-    if (S.isModifying) {
-        S.generationCount++;
-    } else {
-        S.originalScenario = promptText;
-        S.generationCount = 1;
-    }
+    if (!promptText) return UI.alert('warning', 'Please enter a dataset scenario');
     UI.hideElements('btn-run-code', 'download-buttons');
     Object.assign(S, { generatedCode: "", dataResult: null, currentModel: $('model-select').value });
-    const isMod = S.isModifying;
-    UI.showLoading(true, isMod ? 'Applying modifications...' : 'Analyzing scenario...', 0);
     try {
-        await LLM.generate(promptText, isMod);
-        UI.alert('success',isMod ?'Dataset modified successfully': 'Dataset generated successfully');
+        await LLM.generate(promptText);
+        UI.alert('success', 'code generated successfully');
     } catch (err) {
         UI.alert('danger', `Error: ${err.message}`);
-    } finally {
-        UI.showLoading(false);
-    }
+    } finally {  UI.showLoading(false);  }
 }
 
 const Events = {
@@ -254,14 +210,11 @@ const Events = {
                 submit();
             }
         });
-        $('model-select').addEventListener('change', e => {
-            S.currentModel = e.target.value;
-        });
+        $('model-select').addEventListener('change', e => { S.currentModel = e.target.value;  });
     }
 };
 
 window.downloadDataFile = Data.download;
-UI.updateModeUI(false);
 Events.init();
 LLM.init().catch(() => {
     UI.updateStatus('Not Configured', 'secondary');
