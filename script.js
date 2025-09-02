@@ -123,7 +123,7 @@ const Python = {
             await S.pyodide.loadPackage("micropip");
             const micropip = S.pyodide.pyimport("micropip");
             for (const [name, progress] of [
-                ['pandas', 65], ['numpy', 70], ['faker', 75], ['openpyxl', 85]
+                ['pandas', 65], ['numpy', 70], ['faker==37.6.0', 75], ['openpyxl', 85]
             ]) {
                 UI.showLoading(true, `Installing ${name}...`, progress);
                 try { await micropip.install(name); } catch(e) { await S.pyodide.loadPackage(name); }
