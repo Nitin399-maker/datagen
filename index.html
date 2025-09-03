@@ -1,19 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Synthetic Data Generator</title>
-      <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTUiIGZpbGw9IiMyNTYzZWIiLz48cGF0aCBmaWxsPSIjZmZmIiBkPSJtMTYgNyAyIDcgNyAyLTcgMi0yIDctMi03LTctMiA3LTJaIi8+PC9zdmc+" />
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/vs2015.min.css">
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Synthetic Data Generator</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGNpcmNsZSBjeD0iMTYiIGN5PSIxNiIgcj0iMTUiIGZpbGw9IiMyNTYzZWIiLz48cGF0aCBmaWxsPSIjZmZmIiBkPSJtMTYgNyAyIDcgNyAyLTcgMi0yIDctMi03LTctMiA3LTJaIi8+PC9zdmc+" />
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/vs2015.min.css">
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
 </head>
+
 <body>
-<div class="container mt-4">
+  <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="mb-0">🔧 Synthetic Data Generator</h1>
+      <h1 class="mb-0">🔧 Synthetic Data Generator</h1>
       <div class="position-relative ms-md-2" role="group" aria-label="Toggle dark mode" title="Toggle Dark Mode">
         <button class="dark-theme-toggle btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Open navigation menu">
           <i class="bi bi-circle-half"></i> <span class="d-lg-none ms-2">Toggle theme</span>
@@ -26,54 +28,54 @@
       </div>
     </div>
     <div class="row mb-3">
-        <div class="col">
-            <button id="config-btn" class="btn btn-secondary">⚙️ Config LLM</button>
-            <select id="model-select" class="form-select form-select-sm d-inline-block ms-2" style="width: 150px;">
-                <option>Select Model</option>
-            </select>
-            <span id="status-indicator" class="badge bg-secondary ms-2">Not Configured</span>
-        </div>
+      <div class="col">
+        <button id="config-btn" class="btn btn-secondary">⚙️ Config LLM</button>
+        <select id="model-select" class="form-select form-select-sm d-inline-block ms-2" style="width: 150px;">
+          <option>Select Model</option>
+        </select>
+        <span id="status-indicator" class="badge bg-secondary ms-2">Not Configured</span>
+      </div>
     </div>
     <div class="mb-3">
-        <label for="user-prompt" class="form-label" id="prompt-label">Dataset Scenario:</label>
-        <textarea id="user-prompt" class="form-control" rows="3" 
-            placeholder="Example: 'E-commerce sales data with customers, products, and orders tables in Excel format'"></textarea>
-        <div class="mt-2">
-            <button id="btn-generate" class="btn btn-primary" disabled>📊 Generate Dataset</button>
-            <button id="btn-new-dataset" class="btn btn-outline-secondary d-none">🆕 Start New Dataset</button>
-        </div>
+      <label for="user-prompt" class="form-label" id="prompt-label">Dataset Scenario:</label>
+      <textarea id="user-prompt" class="form-control" rows="3" placeholder="Example: 'E-commerce sales data with customers, products, and orders tables in Excel format'"></textarea>
+      <div class="mt-2">
+        <button id="btn-generate" class="btn btn-primary" disabled>📊 Generate Dataset</button>
+        <button id="btn-new-dataset" class="btn btn-outline-secondary d-none">🆕 Start New Dataset</button>
+      </div>
     </div>
     <div id="response-container" class="d-none">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between">
-                <h5>Generated Dataset Schema & Code</h5>
+      <div class="card">
+        <div class="card-header d-flex justify-content-between">
+          <h5>Generated Dataset Schema & Code</h5>
+        </div>
+        <div class="card-body">
+          <div id="response-content"></div>
+          <div class="mb-3 d-flex align-items-center position-relative">
+            <div class="d-flex gap-2">
+              <button id="btn-run-code" class="btn btn-success d-none">▶️ Run Python Code</button>
+              <div id="download-buttons" class="d-none">
+                <button id="btn-download-single" class="btn btn-info">💾 Download Data</button>
+              </div>
             </div>
-            <div class="card-body">
-                <div id="response-content"></div>
-<div class="mb-3 d-flex align-items-center position-relative">
-    <div class="d-flex gap-2">
-        <button id="btn-run-code" class="btn btn-success d-none">▶️ Run Python Code</button>
-        <div id="download-buttons" class="d-none">
-            <button id="btn-download-single" class="btn btn-info">💾 Download Data</button>
-        </div>
-    </div>
-    
-    <div id="loading" class="d-none position-absolute start-50 translate-middle-x text-center">
-        <div class="spinner-border text-primary" role="status"></div>
-        <div class="mt-1">
-            <span id="loading-text">Processing...</span>
-        </div>
-    </div>
-</div>
-    </div>
+
+            <div id="loading" class="d-none position-absolute start-50 translate-middle-x text-center">
+              <div class="spinner-border text-primary" role="status"></div>
+              <div class="mt-1">
+                <span id="loading-text">Processing...</span>
+              </div>
             </div>
+          </div>
         </div>
+      </div>
     </div>
-</div>
+  </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@gramex/ui@0.3.1/dist/dark-theme.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module" src="script.js">
-    </script>
+  <script type="module" src="script.js">
+  </script>
 </body>
+
 </html>
