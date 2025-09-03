@@ -1,3 +1,5 @@
+import { render, html } from "https://cdn.jsdelivr.net/npm/lit-html@3/+esm";
+import { unsafeHTML } from "https://cdn.jsdelivr.net/npm/lit-html@3/directives/unsafe-html.js";
 import { asyncLLM } from "https://cdn.jsdelivr.net/npm/asyncllm@2";
 import { openaiConfig } from "https://cdn.jsdelivr.net/npm/bootstrap-llm-provider@1.2";
 import { bootstrapAlert } from "https://cdn.jsdelivr.net/npm/bootstrap-alert@1";
@@ -16,227 +18,223 @@ marked.use({
     },
   },
 });
-const S = {
-  provider: null,
-  models: [],
-  currentModel: null,
-  generatedCode: "",
-  pyodide: null,
-  dataResult: null,
-  pyodideLoaded: false,
-};
 
-const UI = {
-  showLoading: (show, text = "Processing...") => {
-    $("loading").classList.toggle("d-none", !show);
-    if (show) {
-      $("loading-text").textContent = text;
-    }
-  },
-  updateStatus: (status, type = "secondary") => {
-    const indicator = $("status-indicator");
-    indicator.textContent = status;
-    indicator.className = `badge bg-${type} ms-2`;
-  },
-  alert: (type, message) => {
-    bootstrapAlert({
-      body: message,
-      color: type,
-      position: "top-0 end-0",
-      delay: type === "success" ? 3000 : 5000,
-    });
-  },
-  hideElements: (...ids) => ids.forEach((id) => $(id).classList.add("d-none")),
-  showElements: (...ids) => ids.forEach((id) => $(id).classList.remove("d-none")),
-};
+// Global state variables
+let provider = null;
+let currentModel = "gpt-4.1-mini";
+let generatedCode = "";
+let pyodide = null;
+let dataResult = null;
+let pyodideLoaded = false;
 
-const LLM = {
-  async init(show = false) {
-    try {
-      const cfg = await openaiConfig({
-        title: "LLM Configuration for Data Generator",
-        defaultBaseUrls: ["https://api.openai.com/v1", "https://openrouter.ai/api/v1"],
-        show,
-      });
-      S.provider = { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
-      const filteredModels = cfg.models.filter((model) => {
-        const modelName = model.toLowerCase();
-        return modelName.includes("gpt-4.1") || modelName.includes("gpt-5");
-      });
-      S.models = filteredModels.map((model) => ({ id: model, name: model }));
-      S.currentModel =
-        S.models.find((m) => m.id.toLowerCase().includes("gpt-4.1"))?.id ||
-        S.models.find((m) => m.id.toLowerCase().includes("gpt-5"))?.id ||
-        S.models[0]?.id;
-      this.fillModelDropdown();
-      UI.updateStatus("Configured", "success");
-      $("btn-generate").disabled = false;
-      UI.alert("success", "LLM configured successfully");
-    } catch (e) {
-      UI.alert("danger", `Failed to configure LLM: ${e.message}`);
-      UI.updateStatus("Error", "danger");
-    }
-  },
-  fillModelDropdown() {
-    const sel = $("model-select");
-    sel.innerHTML = "";
-    S.models.forEach((m) =>
-      sel.appendChild(
-        Object.assign(document.createElement("option"), {
-          value: m.id,
-          textContent: m.name,
-          selected: m.id === S.currentModel,
-        }),
-      ),
-    );
-  },
-  async generate(promptText) {
-    if (!S.provider) throw new Error("LLM not configured");
-    const req = {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${S.provider.apiKey}` },
-      body: JSON.stringify({
-        model: S.currentModel,
-        messages: [
-          { role: "system", content: PROMPTS.initial },
-          { role: "user", content: promptText },
-        ],
-        stream: true,
-      }),
-    };
-    let content = "";
-    const respDiv = $("response-content");
-    UI.showElements("response-container");
-    respDiv.innerHTML = `<div class="text-muted">Generating dataset...</div>`;
-    for await (const data of asyncLLM(`${S.provider.baseUrl}/chat/completions`, req)) {
-      if (data.content) {
-        content = data.content;
-        respDiv.innerHTML = marked.parse(content);
-        const match = content.match(/```python\n([\s\S]*?)\n```/);
-        if (match) {
-          S.generatedCode = match[1];
-          UI.showElements("btn-run-code");
-        }
-      }
-    }
-  },
-};
+// UI helper functions
+function showLoading(show, text = "Processing...") {
+  const loadingEl = $("loading");
+  const loadingTextEl = $("loading-text");
+  loadingEl.classList.toggle("d-none", !show);
+  if (show) render(html`${text}`, loadingTextEl);
+}
 
-const Python = {
-  async init() {
-    if (S.pyodideLoaded) return S.pyodide;
-    try {
-      UI.showLoading(true, "Loading Python...", 20);
-      S.pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/" });
-      UI.showLoading(true, "Installing core packages...", 40);
-      await S.pyodide.loadPackage("micropip");
-      const micropip = S.pyodide.pyimport("micropip");
-      for (const [name, progress] of [
-        ["pandas", 65],
-        ["numpy", 70],
-        ["faker", 75],
-        ["openpyxl", 85],
-      ]) {
-        UI.showLoading(true, `Installing ${name}...`, progress);
-        try {
-          await micropip.install(name);
-        } catch {
-          await S.pyodide.loadPackage(name);
-        }
-      }
-      return (S.pyodideLoaded = true), S.pyodide;
-    } finally {
-      UI.showLoading(false);
-    }
-  },
-  async execute() {
-    if (!S.generatedCode) return UI.alert("warning", "No Python code to execute");
-    $("btn-run-code").disabled = true;
-    UI.showLoading(true, "Executing code...", 0);
-    try {
-      const pyodide = await this.init();
-      UI.showLoading(true, "Running Python code...", 50);
-      await pyodide.runPython(S.generatedCode);
-      UI.showLoading(true, "Processing data...", 80);
-      const vars = (key) => pyodide.runPython(`'${key}' in globals()`);
-      const hasData = vars("result_data");
-      if (!hasData) throw new Error("No result_data variable found");
-      const rawData = pyodide.runPython("result_data"),
-        filename = vars("result_filename") ? pyodide.runPython("result_filename") : "synthetic_data.xlsx",
-        rows = vars("result_rows") ? pyodide.runPython("result_rows") : 0;
-      const bytes = Uint8Array.from(atob(rawData), (c) => c.charCodeAt(0));
-      const dataSize = bytes.length;
-      if (!bytes || bytes.length === 0) throw new Error("Processed data is empty");
-      S.dataResult = { filename, data: bytes, rows, size: dataSize };
-      UI.showElements("download-buttons");
-      $("user-prompt").value = "";
-      UI.alert("success", `Excel dataset ready: ${rows} rows, ${dataSize} bytes`);
-    } catch (err) {
-      UI.alert("danger", `Execution error: ${err.message}`);
-    } finally {
-      UI.showLoading(false);
-      $("btn-run-code").disabled = false;
-    }
-  },
-};
+function hideElements(...ids) {
+  ids.forEach((id) => $(id).classList.add("d-none"));
+}
 
-const Data = {
-  download() {
-    const res = S.dataResult;
-    if (!res?.data) return UI.alert("warning", "No data available for download");
-    try {
-      const { filename = "synthetic_data.xlsx", data } = res;
-      if (!data?.length) throw new Error("Data is empty");
-      const mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      const blob = new Blob([data], { type: mime });
-      if (!blob.size) throw new Error("Generated blob is empty");
-      const url = URL.createObjectURL(blob);
-      const a = Object.assign(document.createElement("a"), { href: url, download: filename });
-      document.body.appendChild(a).click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      UI.alert("success", `${filename} downloaded successfully (${blob.size} bytes)`);
-    } catch (e) {
-      UI.alert("danger", `Download failed: ${e.message}`);
-    }
-  },
-};
+function showElements(...ids) {
+  ids.forEach((id) => $(id).classList.remove("d-none"));
+}
 
-async function submit() {
-  const promptText = $("user-prompt").value.trim();
-  if (!promptText) return UI.alert("warning", "Please enter a dataset scenario");
-  UI.hideElements("btn-run-code", "download-buttons");
-  Object.assign(S, { generatedCode: "", dataResult: null, currentModel: $("model-select").value });
+// LLM functions
+async function initLLM(show = false) {
   try {
-    await LLM.generate(promptText);
-    UI.alert("success", "code generated successfully");
-  } catch (err) {
-    UI.alert("danger", `Error: ${err.message}`);
-  } finally {
-    UI.showLoading(false);
+    const cfg = await openaiConfig({
+      title: "LLM Configuration for Data Generator",
+      defaultBaseUrls: ["https://api.openai.com/v1", "https://openrouter.ai/api/v1"],
+      show,
+    });
+    provider = { baseUrl: cfg.baseUrl, apiKey: cfg.apiKey };
+  } catch (e) {
+    bootstrapAlert({ body: `Failed to configure LLM: ${e.message}`, color: "danger" });
   }
 }
 
-const Events = {
-  init() {
-    $("config-btn").addEventListener("click", () => LLM.init(true));
-    $("btn-generate").addEventListener("click", submit);
-    $("btn-run-code").addEventListener("click", () => Python.execute());
-    $("btn-download-single").addEventListener("click", Data.download);
-    $("user-prompt").addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        submit();
-      }
-    });
-    $("model-select").addEventListener("change", (e) => {
-      S.currentModel = e.target.value;
-    });
-  },
-};
+async function generateDataset(promptText) {
+  if (!provider) {
+    // Initialize LLM on demand
+    await initLLM();
+    if (!provider) {
+      throw new Error("LLM not configured");
+    }
+  }
 
-window.downloadDataFile = Data.download;
-Events.init();
-LLM.init().catch(() => {
-  UI.updateStatus("Not Configured", "secondary");
+  const req = {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.apiKey}` },
+    body: JSON.stringify({
+      model: currentModel,
+      messages: [
+        { role: "system", content: PROMPTS.initial },
+        { role: "user", content: promptText },
+      ],
+      stream: true,
+    }),
+  };
+
+  let content = "";
+  const respDiv = $("response-content");
+  showElements("response-container");
+
+  render(html`<div class="text-muted">Generating dataset...</div>`, respDiv);
+
+  for await (const data of asyncLLM(`${provider.baseUrl}/chat/completions`, req)) {
+    if (data.content) {
+      content = data.content;
+      render(html`${unsafeHTML(marked.parse(content))}`, respDiv);
+      const match = content.match(/```python\n([\s\S]*?)\n```/);
+      if (match) {
+        generatedCode = match[1];
+        showElements("btn-run-code");
+      }
+    }
+  }
+}
+
+// Python execution functions
+async function initPython() {
+  if (pyodideLoaded) return pyodide;
+  try {
+    showLoading(true, "Loading Python...", 20);
+    pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/" });
+    showLoading(true, "Installing core packages...", 40);
+    await pyodide.loadPackage("micropip");
+    const micropip = pyodide.pyimport("micropip");
+    for (const [name, progress] of [
+      ["pandas", 65],
+      ["numpy", 70],
+      ["faker", 75],
+      ["openpyxl", 85],
+    ]) {
+      showLoading(true, `Installing ${name}...`, progress);
+      try {
+        await micropip.install(name);
+      } catch {
+        await pyodide.loadPackage(name);
+      }
+    }
+    pyodideLoaded = true;
+    return pyodide;
+  } finally {
+    showLoading(false);
+  }
+}
+
+async function executePython() {
+  if (!generatedCode) {
+    bootstrapAlert({ body: "No Python code to execute", color: "warning" });
+    return;
+  }
+
+  $("btn-run-code").disabled = true;
+  showLoading(true, "Executing code...", 0);
+
+  try {
+    const pyodideInstance = await initPython();
+    showLoading(true, "Running Python code...", 50);
+    await pyodideInstance.runPython(generatedCode);
+    showLoading(true, "Processing data...", 80);
+
+    const vars = (key) => pyodideInstance.runPython(`'${key}' in globals()`);
+    const hasData = vars("result_data");
+    if (!hasData) throw new Error("No result_data variable found");
+
+    const rawData = pyodideInstance.runPython("result_data");
+    const filename = vars("result_filename") ? pyodideInstance.runPython("result_filename") : "synthetic_data.xlsx";
+    const rows = vars("result_rows") ? pyodideInstance.runPython("result_rows") : 0;
+    const bytes = Uint8Array.from(atob(rawData), (c) => c.charCodeAt(0));
+    const dataSize = bytes.length;
+
+    if (!bytes || bytes.length === 0) throw new Error("Processed data is empty");
+
+    dataResult = { filename, data: bytes, rows, size: dataSize };
+    showElements("download-buttons");
+    $("user-prompt").value = "";
+
+    bootstrapAlert({ body: `Excel dataset ready: ${rows} rows, ${dataSize} bytes`, color: "success" });
+  } catch (err) {
+    bootstrapAlert({ body: `Execution error: ${err.message}`, color: "danger" });
+  } finally {
+    showLoading(false);
+    $("btn-run-code").disabled = false;
+  }
+}
+
+// Data download function
+function downloadData() {
+  const res = dataResult;
+  if (!res?.data) {
+    bootstrapAlert({ body: "No data available for download", color: "warning" });
+    return;
+  }
+
+  try {
+    const { filename = "synthetic_data.xlsx", data } = res;
+    if (!data?.length) throw new Error("Data is empty");
+
+    const mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    const blob = new Blob([data], { type: mime });
+    if (!blob.size) throw new Error("Generated blob is empty");
+
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+    document.body.appendChild(a).click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    bootstrapAlert({ body: `${filename} downloaded successfully (${blob.size} bytes)`, color: "success" });
+  } catch (e) {
+    bootstrapAlert({ body: `Download failed: ${e.message}`, color: "danger" });
+  }
+}
+
+// Main submit function
+async function submit() {
+  const promptText = $("user-prompt").value.trim();
+  if (!promptText) {
+    bootstrapAlert({
+      body: "Please enter a dataset scenario",
+      color: "warning",
+    });
+    return;
+  }
+
+  hideElements("btn-run-code", "download-buttons");
+  generatedCode = "";
+  dataResult = null;
+  currentModel = $("model-select").value;
+
+  try {
+    await generateDataset(promptText);
+    bootstrapAlert({ body: "Code generated successfully", color: "success" });
+  } catch (err) {
+    bootstrapAlert({ body: `Error: ${err.message}`, color: "danger" });
+  } finally {
+    showLoading(false);
+  }
+}
+
+// Global function for compatibility
+window.downloadDataFile = downloadData;
+
+// Event initialization
+$("config-btn").addEventListener("click", () => initLLM(true));
+$("btn-generate").addEventListener("click", submit);
+$("btn-run-code").addEventListener("click", () => executePython());
+$("btn-download-single").addEventListener("click", downloadData);
+$("user-prompt").addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    e.preventDefault();
+    submit();
+  }
+});
+$("model-select").addEventListener("change", (e) => {
+  currentModel = e.target.value;
 });
