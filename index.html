@@ -16,6 +16,26 @@
       margin-bottom: 50vh;
     }
 
+    .narrative {
+      max-inline-size: 40rem;
+    }
+
+    .demo-card {
+      transition: all 0.2s ease;
+      border: 1px solid var(--bs-border-color);
+    }
+
+    .demo-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      border-color: var(--bs-primary);
+    }
+
+    .demo-card.border-primary {
+      border-color: var(--bs-primary) !important;
+      box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+    }
+
   </style>
 </head>
 
@@ -42,6 +62,23 @@
   </nav>
 
   <div class="container mt-4">
+    <h1 class="display-1 my-4 text-center">DataGen</h1>
+    <h2 class="display-6 text-center">Generate <em>realistic</em> synthetic data using LLMs</h2>
+    <div class="mx-auto my-3 narrative">
+      <p>DataGen leverages the power of <strong>Large Language Models</strong> to create <strong>realistic synthetic datasets</strong> for testing, development, and analysis. Simply describe your data requirements in plain English, and our AI generates complete datasets with proper relationships, realistic patterns, and industry-standard formats.</p>
+
+      <p>Perfect for <strong>developers</strong> building applications, <strong>data scientists</strong> creating prototypes, and <strong>businesses</strong> needing sample data for demos. Generate everything from customer records and sales transactions to IoT sensor data and financial reports - all while maintaining <strong>data privacy</strong> and <strong>regulatory compliance</strong>.</p>
+
+      <p>Skip the tedious manual data creation process. Get <strong>production-ready datasets</strong> in Excel format with just a few clicks, complete with realistic patterns, anomalies, and business logic baked right in.</p>
+    </div>
+
+    <div class="my-4">
+      <h3 class="h5 mb-3 text-center">Popular Dataset Templates</h3>
+      <div id="demo-cards" class="row g-3">
+        <!-- Demo cards will be rendered here -->
+      </div>
+    </div>
+
     <div class="row mb-3">
       <div class="col">
         <button id="config-btn" class="btn btn-outline-primary">⚙️ Config LLM</button>
@@ -74,13 +111,6 @@
               <button id="btn-run-code" class="btn btn-success d-none">▶️ Run Python Code</button>
               <div id="download-buttons" class="d-none">
                 <button id="btn-download-single" class="btn btn-info">💾 Download Data</button>
-              </div>
-            </div>
-
-            <div id="loading" class="d-none position-absolute start-50 translate-middle-x text-center">
-              <div class="spinner-border text-primary" role="status"></div>
-              <div class="mt-1">
-                <span id="loading-text">Processing...</span>
               </div>
             </div>
           </div>

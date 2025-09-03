@@ -5,7 +5,7 @@ import { openaiConfig } from "https://cdn.jsdelivr.net/npm/bootstrap-llm-provide
 import { bootstrapAlert } from "https://cdn.jsdelivr.net/npm/bootstrap-alert@1";
 import hljs from "https://cdn.jsdelivr.net/npm/highlight.js@11/+esm";
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
-import { PROMPTS } from "./utils.js";
+import { PROMPTS, demos } from "./utils.js";
 
 const $ = (id) => document.getElementById(id);
 const marked = new Marked();
@@ -28,11 +28,8 @@ let dataResult = null;
 let pyodideLoaded = false;
 
 // UI helper functions
-function showLoading(show, text = "Processing...") {
-  const loadingEl = $("loading");
-  const loadingTextEl = $("loading-text");
-  loadingEl.classList.toggle("d-none", !show);
-  if (show) render(html`${text}`, loadingTextEl);
+function showLoading(text = "Processing...") {
+  $("btn-run-code").innerText = text;
 }
 
 function hideElements(...ids) {
@@ -41,6 +38,51 @@ function hideElements(...ids) {
 
 function showElements(...ids) {
   ids.forEach((id) => $(id).classList.remove("d-none"));
+}
+
+// Demo cards rendering and handling
+function renderDemoCards() {
+  const demoCardsContainer = $("demo-cards");
+
+  const cardsTemplate = html`
+    ${demos.map(
+      (demo, index) => html`
+        <div class="col-md-6 col-lg-4">
+          <div class="card h-100 demo-card" style="cursor: pointer;" data-demo-index="${index}">
+            <div class="card-body">
+              <h6 class="card-title">${demo.title}</h6>
+              <p class="card-text small text-muted">${demo.description}</p>
+            </div>
+          </div>
+        </div>
+      `,
+    )}
+  `;
+
+  render(cardsTemplate, demoCardsContainer);
+
+  // Add click handlers to demo cards
+  demoCardsContainer.addEventListener("click", handleDemoCardClick);
+}
+
+function handleDemoCardClick(event) {
+  const card = event.target.closest(".demo-card");
+  if (!card) return;
+
+  const demoIndex = parseInt(card.dataset.demoIndex);
+  const selectedDemo = demos[demoIndex];
+
+  if (selectedDemo) {
+    // Update the textarea with the demo prompt
+    $("user-prompt").value = selectedDemo.prompt;
+
+    // Visual feedback
+    document.querySelectorAll(".demo-card").forEach((c) => c.classList.remove("border-primary"));
+    card.classList.add("border-primary");
+
+    // Automatically trigger generation
+    submit();
+  }
 }
 
 // LLM functions
@@ -61,9 +103,7 @@ async function generateDataset(promptText) {
   if (!provider) {
     // Initialize LLM on demand
     await initLLM();
-    if (!provider) {
-      throw new Error("LLM not configured");
-    }
+    if (!provider) throw new Error("LLM not configured");
   }
 
   const req = {
@@ -101,30 +141,23 @@ async function generateDataset(promptText) {
 // Python execution functions
 async function initPython() {
   if (pyodideLoaded) return pyodide;
-  try {
-    showLoading(true, "Loading Python...", 20);
-    pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/" });
-    showLoading(true, "Installing core packages...", 40);
-    await pyodide.loadPackage("micropip");
-    const micropip = pyodide.pyimport("micropip");
-    for (const [name, progress] of [
-      ["pandas", 65],
-      ["numpy", 70],
-      ["faker", 75],
-      ["openpyxl", 85],
-    ]) {
-      showLoading(true, `Installing ${name}...`, progress);
-      try {
-        await micropip.install(name);
-      } catch {
-        await pyodide.loadPackage(name);
-      }
+  $("btn-run-code").disabled = true;
+  $("btn-run-code").innerHTML = "";
+  showLoading("Loading Python...", 20);
+  pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/" });
+  showLoading("Installing core packages...", 40);
+  await pyodide.loadPackage("micropip");
+  const micropip = pyodide.pyimport("micropip");
+  for (const name of ["pandas", "numpy", "faker", "openpyxl"]) {
+    showLoading(`Installing ${name}...`);
+    try {
+      await micropip.install(name);
+    } catch {
+      await pyodide.loadPackage(name);
     }
-    pyodideLoaded = true;
-    return pyodide;
-  } finally {
-    showLoading(false);
   }
+  pyodideLoaded = true;
+  return pyodide;
 }
 
 async function executePython() {
@@ -134,13 +167,13 @@ async function executePython() {
   }
 
   $("btn-run-code").disabled = true;
-  showLoading(true, "Executing code...", 0);
+  showLoading("Executing code...", 0);
 
   try {
     const pyodideInstance = await initPython();
-    showLoading(true, "Running Python code...", 50);
+    showLoading("Running Python code...", 50);
     await pyodideInstance.runPython(generatedCode);
-    showLoading(true, "Processing data...", 80);
+    showLoading("Processing data...", 80);
 
     const vars = (key) => pyodideInstance.runPython(`'${key}' in globals()`);
     const hasData = vars("result_data");
@@ -161,9 +194,6 @@ async function executePython() {
     bootstrapAlert({ body: `Excel dataset ready: ${rows} rows, ${dataSize} bytes`, color: "success" });
   } catch (err) {
     bootstrapAlert({ body: `Execution error: ${err.message}`, color: "danger" });
-  } finally {
-    showLoading(false);
-    $("btn-run-code").disabled = false;
   }
 }
 
@@ -216,8 +246,6 @@ async function submit() {
     bootstrapAlert({ body: "Code generated successfully", color: "success" });
   } catch (err) {
     bootstrapAlert({ body: `Error: ${err.message}`, color: "danger" });
-  } finally {
-    showLoading(false);
   }
 }
 
@@ -237,4 +265,9 @@ $("user-prompt").addEventListener("keydown", (e) => {
 });
 $("model-select").addEventListener("change", (e) => {
   currentModel = e.target.value;
+});
+
+// Initialize demo cards on page load
+document.addEventListener("DOMContentLoaded", () => {
+  renderDemoCards();
 });
