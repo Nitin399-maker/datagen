@@ -65,11 +65,12 @@
     <h1 class="display-1 my-4 text-center">DataGen</h1>
     <h2 class="display-6 text-center">Generate <em>realistic</em> synthetic data using LLMs</h2>
     <div class="mx-auto my-3 narrative">
-      <p>DataGen leverages the power of <strong>Large Language Models</strong> to create <strong>realistic synthetic datasets</strong> for testing, development, and analysis. Simply describe your data requirements in plain English, and our AI generates complete datasets with proper relationships, realistic patterns, and industry-standard formats.</p>
-
-      <p>Perfect for <strong>developers</strong> building applications, <strong>data scientists</strong> creating prototypes, and <strong>businesses</strong> needing sample data for demos. Generate everything from customer records and sales transactions to IoT sensor data and financial reports - all while maintaining <strong>data privacy</strong> and <strong>regulatory compliance</strong>.</p>
-
-      <p>Skip the tedious manual data creation process. Get <strong>production-ready datasets</strong> in Excel format with just a few clicks, complete with realistic patterns, anomalies, and business logic baked right in.</p>
+      <p class="mb-2">Quickly generate realistic, pattern-rich datasets for development, testing, and demos.</p>
+      <ul class="mb-0">
+        <li>If a client hasn't shared data and you need a believable mockup.</li>
+        <li>To test how your app handles bias, edge cases, or varied distributions.</li>
+        <li>To anonymize demos with generated data that preserves real-world patterns.</li>
+      </ul>
     </div>
 
     <div class="my-4">
@@ -79,16 +80,105 @@
       </div>
     </div>
 
-    <div class="row mb-3">
-      <div class="col">
-        <button id="config-btn" class="btn btn-outline-primary">⚙️ Config LLM</button>
-        <input id="model-select" class="form-control d-inline-block ms-2" style="width: 200px;" list="model-list" placeholder="Select or type model" value="gpt-4.1-mini">
-        <datalist id="model-list">
-          <option value="gpt-4.1-mini">
-          <option value="gpt-4.1-nano">
-          <option value="gpt-5-mini">
-          <option value="gpt-5-nano">
-        </datalist>
+    <div class="accordion my-4" id="advanced-accordion">
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="advanced-heading">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-settings" aria-expanded="false" aria-controls="advanced-settings">
+            <i class="bi bi-sliders2 me-2"></i> Advanced Settings
+          </button>
+        </h2>
+        <div id="advanced-settings" class="accordion-collapse collapse" aria-labelledby="advanced-heading" data-bs-parent="#advanced-accordion">
+          <div class="accordion-body">
+            <div class="row mb-3">
+              <div class="col">
+                <button id="config-btn" class="btn btn-outline-primary"><i class="bi bi-gear me-1"></i> Config LLM</button>
+                <input id="model-select" class="form-control d-inline-block ms-2" style="width: 220px;" list="model-list" placeholder="Select or type model" value="gpt-4.1-mini">
+                <datalist id="model-list">
+                  <option value="gpt-4.1-mini">
+                  <option value="gpt-4.1-nano">
+                  <option value="gpt-5-mini">
+                  <option value="gpt-5-nano">
+                </datalist>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="system-prompt" class="form-label">System Prompt</label>
+              <textarea id="system-prompt" class="form-control font-monospace" rows="12">You are a synthetic data generator that creates realistic datasets with strict coding standards.
+
+Always extract and clearly list **Behavioral Rules about the generated data itself** (patterns, anomalies, realistic conditions) before writing code, and ensure the Python code implements those rules.
+
+## REQUIRED OUTPUT VARIABLES
+- `result_data` → base64 Excel string
+- `result_filename` → filename.xlsx
+- `result_rows` → total row count
+- `result_format` → "excel"
+
+## TECHNICAL REQUIREMENTS
+**Libraries**: pandas, numpy, faker, io.BytesIO, base64
+**Format**: Excel (.xlsx) only, openpyxl engine, base64 export
+**Arrays**: Use random.choice for lists/tuples, np.random only for numpy arrays
+**Dates**: Use datetime.date objects (.date()) with Faker, ensure start_date &lt;= end_date
+**DataFrames**: Never use as dict keys; use string names mapped to (df, [columns])
+**Functions**: Declare global variables at top before first use
+- Use Python's random.choice() instead of numpy.random.choice() when picking from lists of tuples.
+- Convert numpy.datetime64 to Python datetime with pd.to_datetime(...) before using .date().
+- Do not use Faker's .unique unless the pool of values is large enough; prefer deterministic naming when needed.
+- Ensure all imports are available in Pyodide.
+- Always use .iterrows() when looping rows in a DataFrame, not direct iteration.
+- Convert numpy types to native Python with int(), float(), or str() before using in datetime, timedelta, or JSON.
+- Avoid comparing lists to numbers; ensure conditions are scalar (len(...) or random.random()).
+- When using Faker profiles, access fields consistently (dict vs DataFrame row).
+- Ensure all generated numbers used in timedelta are cast to int().
+- Do not rely on deprecated .append() in pandas; use pd.concat instead.
+
+## CODE TEMPLATE
+```python
+import pandas as pd
+import numpy as np
+from faker import Faker
+from io import BytesIO
+import base64
+from datetime import datetime, date
+
+fake = Faker()
+fake.seed_instance(42)
+
+# Date handling example
+start_date = date(2020, 1, 1)
+end_date = date(2024, 12, 31)
+if start_date &gt; end_date:
+    start_date, end_date = end_date, start_date
+
+# Single table
+data = {
+    'id': range(1, 101),
+    'name': [fake.name() for _ in range(100)],
+    'date': [fake.date_between(start_date=start_date, end_date=end_date) for _ in range(100)]
+}
+df = pd.DataFrame(data)
+
+# Multiple tables (add more DataFrames as needed)
+# df2 = pd.DataFrame({...})
+
+buffer = BytesIO()
+with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+    df.to_excel(writer, sheet_name='Sheet1', index=False)
+    # df2.to_excel(writer, sheet_name='Sheet2', index=False)
+
+result_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+result_filename = "synthetic_data.xlsx"
+result_rows = len(df)  # + len(df2) for multiple tables
+result_format = "excel"
+```
+
+**Response Format:**
+## Schema & Analysis
+## Behavioral Rules
+## Python Code</textarea>
+              <div class="form-text">Used as the LLM system message. You can customize it.</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="mb-3">

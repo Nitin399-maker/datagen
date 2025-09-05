@@ -5,7 +5,7 @@ import { openaiConfig } from "https://cdn.jsdelivr.net/npm/bootstrap-llm-provide
 import { bootstrapAlert } from "https://cdn.jsdelivr.net/npm/bootstrap-alert@1";
 import hljs from "https://cdn.jsdelivr.net/npm/highlight.js@11/+esm";
 import { Marked } from "https://cdn.jsdelivr.net/npm/marked@13/+esm";
-import { PROMPTS, demos } from "./utils.js";
+let demos = [];
 
 const $ = (id) => document.getElementById(id);
 const marked = new Marked();
@@ -33,11 +33,35 @@ function showLoading(text = "Processing...") {
 }
 
 function hideElements(...ids) {
-  ids.forEach((id) => $(id).classList.add("d-none"));
+  ids.forEach((id) => $(id)?.classList.add("d-none"));
 }
 
 function showElements(...ids) {
-  ids.forEach((id) => $(id).classList.remove("d-none"));
+  ids.forEach((id) => $(id)?.classList.remove("d-none"));
+}
+
+// Config loading and demos
+async function loadConfig() {
+  const container = $("demo-cards");
+  render(
+    html`<div class="d-flex justify-content-center my-3">
+      <div class="spinner-border text-primary" role="status" aria-label="Loading demos"></div>
+    </div>`,
+    container,
+  );
+  try {
+    const resp = await fetch("./config.json", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json = await resp.json();
+    demos = Array.isArray(json?.demos) ? json.demos : [];
+    renderDemoCards();
+  } catch (e) {
+    bootstrapAlert({ body: `Failed to load config.json: ${e.message}`, color: "danger" });
+    render(
+      html`<div class="alert alert-danger" role="alert">Unable to load demos. Please check config.json.</div>`,
+      container,
+    );
+  }
 }
 
 // Demo cards rendering and handling
@@ -80,8 +104,8 @@ function handleDemoCardClick(event) {
     document.querySelectorAll(".demo-card").forEach((c) => c.classList.remove("border-primary"));
     card.classList.add("border-primary");
 
-    // Automatically trigger generation
-    submit();
+    // Scroll generate dataset button into view
+    $("btn-generate").scrollIntoView({ behavior: "smooth", block: "center" });
   }
 }
 
@@ -106,13 +130,14 @@ async function generateDataset(promptText) {
     if (!provider) throw new Error("LLM not configured");
   }
 
+  const systemPrompt = $("system-prompt").value.trim();
   const req = {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.apiKey}` },
     body: JSON.stringify({
       model: currentModel,
       messages: [
-        { role: "system", content: PROMPTS.initial },
+        { role: "system", content: systemPrompt },
         { role: "user", content: promptText },
       ],
       stream: true,
@@ -143,9 +168,9 @@ async function initPython() {
   if (pyodideLoaded) return pyodide;
   $("btn-run-code").disabled = true;
   $("btn-run-code").innerHTML = "";
-  showLoading("Loading Python...", 20);
+  showLoading("Loading Python...");
   pyodide = await loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.24.1/full/" });
-  showLoading("Installing core packages...", 40);
+  showLoading("Installing core packages...");
   await pyodide.loadPackage("micropip");
   const micropip = pyodide.pyimport("micropip");
   for (const name of ["pandas", "numpy", "faker", "openpyxl"]) {
@@ -167,20 +192,20 @@ async function executePython() {
   }
 
   $("btn-run-code").disabled = true;
-  showLoading("Executing code...", 0);
+  showLoading("Executing code...");
 
   try {
     const pyodideInstance = await initPython();
-    showLoading("Running Python code...", 50);
+    showLoading("Running Python code...");
     await pyodideInstance.runPython(generatedCode);
-    showLoading("Processing data...", 80);
+    showLoading("Processing data...");
 
     const vars = (key) => pyodideInstance.runPython(`'${key}' in globals()`);
     const hasData = vars("result_data");
     if (!hasData) throw new Error("No result_data variable found");
 
     const rawData = pyodideInstance.runPython("result_data");
-    const filename = vars("result_filename") ? pyodideInstance.runPython("result_filename") : "synthetic_data.xlsx";
+    const filename = vars("result_filename") ? pyodideInstance.runPython("result_filename") : "synthetic-data.xlsx";
     const rows = vars("result_rows") ? pyodideInstance.runPython("result_rows") : 0;
     const bytes = Uint8Array.from(atob(rawData), (c) => c.charCodeAt(0));
     const dataSize = bytes.length;
@@ -192,8 +217,12 @@ async function executePython() {
     $("user-prompt").value = "";
 
     bootstrapAlert({ body: `Excel dataset ready: ${rows} rows, ${dataSize} bytes`, color: "success" });
+
+    $("btn-run-code").enabled = true;
   } catch (err) {
     bootstrapAlert({ body: `Execution error: ${err.message}`, color: "danger" });
+    console.error(err);
+    $("btn-run-code").value = "Code error: generate again"
   }
 }
 
@@ -206,7 +235,7 @@ function downloadData() {
   }
 
   try {
-    const { filename = "synthetic_data.xlsx", data } = res;
+    const { filename = "synthetic-data.xlsx", data } = res;
     if (!data?.length) throw new Error("Data is empty");
 
     const mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -229,10 +258,7 @@ function downloadData() {
 async function submit() {
   const promptText = $("user-prompt").value.trim();
   if (!promptText) {
-    bootstrapAlert({
-      body: "Please enter a dataset scenario",
-      color: "warning",
-    });
+    bootstrapAlert({ body: "Please enter a dataset scenario", color: "warning" });
     return;
   }
 
@@ -241,11 +267,27 @@ async function submit() {
   dataResult = null;
   currentModel = $("model-select").value;
 
+  const btn = $("btn-generate");
+  btn.disabled = true;
+  // Add a small spinner next to existing text
+  const SPINNER_CLASS = "_btn-generate-spinner";
+  if (!btn.querySelector(`.${SPINNER_CLASS}`)) {
+    const spin = document.createElement("span");
+    spin.className = `spinner-border spinner-border-sm ms-2 ${SPINNER_CLASS}`;
+    spin.setAttribute("role", "status");
+    spin.setAttribute("aria-hidden", "true");
+    btn.appendChild(spin);
+  }
+
   try {
     await generateDataset(promptText);
     bootstrapAlert({ body: "Code generated successfully", color: "success" });
   } catch (err) {
     bootstrapAlert({ body: `Error: ${err.message}`, color: "danger" });
+  } finally {
+    btn.disabled = false;
+    const spin = btn.querySelector(`.${SPINNER_CLASS}`);
+    if (spin) spin.remove();
   }
 }
 
@@ -269,5 +311,5 @@ $("model-select").addEventListener("change", (e) => {
 
 // Initialize demo cards on page load
 document.addEventListener("DOMContentLoaded", () => {
-  renderDemoCards();
+  loadConfig();
 });
